@@ -26,4 +26,28 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-acti
 function download(name,text,type){let u=URL.createObjectURL(new Blob(['\ufeff',text],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function parseCSV(text){text=text.replace(/^\uFEFF/,'');let first=text.split(/\r?\n/)[0],sep=first.includes(';')?';':',',rows=[],row=[],cell='',quoted=false;for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}else if(c===sep&&!quoted){row.push(cell);cell=''}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell=''}else cell+=c}if(quoted)throw Error('CSV inválido: comillas sin cerrar');row.push(cell);if(row.some(x=>x.trim()))rows.push(row);return rows}
 function importCSV(){const input=document.createElement('input');input.type='file';input.accept='.csv,text/csv';input.onchange=async()=>{try{const file=input.files[0];if(file.size>1500000)throw Error('El CSV debe pesar menos de 1,5 MB');const rows=parseCSV(await file.text()),head=rows.shift()?.map(s=>s.trim().toLowerCase());if(!head?.includes('nombre'))throw Error('Falta la columna nombre. Descarga la plantilla CSV.');let data=rows.map((r,i)=>{let o=Object.fromEntries(head.map((h,j)=>[h,(r[j]||'').trim()]));if(!o.nombre)throw Error('Falta nombre en fila '+(i+2));let status=Object.keys(statuses).find(k=>k===o.estado||statuses[k].toLowerCase()===o.estado.toLowerCase());if(o.estado&&!status)throw Error('Estado inválido en fila '+(i+2));return {kind:'attendee',event_id:eventId,name:o.nombre,company:o.empresa,role:o.cargo,email:o.correo,credential:o.credencial,status:status||'pending'}});if(!data.length)throw Error('El CSV no contiene asistentes');if(!confirm(`¿Agregar ${data.length} asistentes a ${current().name}?`))return;await api('/api/records','POST',data);await refresh();toast(data.length+' asistentes importados')}catch(e){toast(e.message)}};input.click()}
-if(!['attendees','host','board','agenda','gifts'].includes(view))view='attendees';refresh();setInterval(()=>{if(!saving&&!$('#modal').open&&!document.activeElement?.matches('select'))refresh()},3000);
+if(!['attendees','host','board','agenda','gifts'].includes(view))view='attendees';
+let demoSignedIn=false;
+function startDemo(){demoSignedIn=true;document.body.classList.remove('demo-locked');$('#demo-login')?.remove();sessionStorage.setItem('tibox-eventos-demo','signed-in');refresh();}
+const demoStyle=document.createElement('style');demoStyle.textContent=`
+body.demo-locked>aside,body.demo-locked>.workspace{display:none}
+#demo-login{min-height:100dvh;width:100%;display:grid;place-items:center;padding:24px;background:#011c40}
+#demo-login .login-card{width:100%;max-width:420px;background:white;border-radius:16px;padding:36px;border-top:5px solid #fcc703}
+#demo-login h1{font-size:27px;margin:0 0 8px}
+#demo-login p{font-size:14px;color:#5b718a;line-height:1.6}
+#demo-login label{font-size:14px}
+#demo-login input{width:100%}
+#demo-login button{width:100%}
+#demo-login #login-error{color:#a33b2e}
+#demo-logout{margin-top:20px;width:100%}
+`;document.head.append(demoStyle);
+const signout=document.createElement('button');signout.id='demo-logout';signout.textContent='Cerrar sesión';signout.onclick=()=>{sessionStorage.removeItem('tibox-eventos-demo');location.reload()};document.querySelector('aside').append(signout);
+if(sessionStorage.getItem('tibox-eventos-demo')==='signed-in')startDemo();
+else{
+ document.body.classList.add('demo-locked');
+ const gate=document.createElement('section');gate.id='demo-login';gate.innerHTML='<div class="login-card"><h1>Tibox Eventos</h1><p>Accede al panel de organización y recepción.</p><form id="login-form"><label for="login-user">Usuario</label><input id="login-user" name="username" autocomplete="username" required autofocus><label for="login-password">Clave</label><input id="login-password" name="password" type="password" autocomplete="current-password" required><p id="login-error" role="alert"></p><button class="primary" type="submit">Ingresar</button></form><p>Acceso demostrativo · No constituye una protección de datos.</p></div>';document.body.append(gate);
+ $('#login-form').onsubmit=e=>{e.preventDefault();if($('#login-user').value.trim()==='eventostibox'&&$('#login-password').value==='123456')startDemo();else{$('#login-error').textContent='Usuario o clave incorrectos.';$('#login-password').value='';$('#login-password').focus()}};
+ $('#login-user').focus();
+}
+setInterval(()=>{if(demoSignedIn&&!saving&&!$('#modal').open&&!document.activeElement?.matches('select'))refresh()},3000);
+
